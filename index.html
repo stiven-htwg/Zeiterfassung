@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zeiterfassung</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1d2330; --muted: #6b7385;
+    --line: #e3e6ec; --accent: #2f6fed; --accent-d: #2459c4; --danger: #d64545; --ok: #1f9d5a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171f; --card: #1c212c; --text: #e8ebf2; --muted: #98a1b5; --line: #2b3243; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 20px 16px 60px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: .9rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; color: var(--muted); flex: 1 1 140px; }
+  input, select, button { font: inherit; }
+  input, select { padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); width: 100%; }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button { padding: 9px 14px; border: 0; border-radius: 8px; cursor: pointer; background: var(--accent); color: #fff; font-weight: 600; }
+  button:hover { background: var(--accent-d); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 500; }
+  button.ghost:hover { background: var(--bg); }
+  button.danger { background: transparent; color: var(--danger); border: 1px solid transparent; padding: 4px 8px; font-weight: 500; }
+  button.danger:hover { background: rgba(214,69,69,.1); }
+  button.stop { background: var(--danger); }
+  .timer { font-variant-numeric: tabular-nums; font-size: 2.4rem; font-weight: 700; letter-spacing: 1px; margin: 4px 0 12px; }
+  .timer.running { color: var(--ok); }
+  .ask { background: var(--bg); border: 1px solid var(--accent); border-radius: 10px; padding: 12px; margin-top: 12px; }
+  .ask p { margin: 0 0 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .4px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .day { margin: 16px 0 6px; font-weight: 700; display: flex; justify-content: space-between; }
+  .day span { color: var(--muted); font-weight: 500; }
+  .empty { color: var(--muted); text-align: center; padding: 18px 0; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 99px; background: var(--bg); border: 1px solid var(--line); font-size: .78rem; }
+  .hint { color: var(--muted); font-size: .8rem; margin-top: 10px; }
+  .msg { padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; font-size: .9rem; display: none; }
+  .msg.err { display: block; background: rgba(214,69,69,.12); color: var(--danger); }
+  .msg.ok { display: block; background: rgba(31,157,90,.12); color: var(--ok); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>⏱️ Zeiterfassung</h1>
+  <p class="sub">Trag deine Zeit für das Teamprojekt ein. Alle im Team sehen die gemeinsame Auswertung.</p>
+
+  <div id="msg" class="msg"></div>
+
+  <!-- Wer bin ich -->
+  <div class="card">
+    <div class="row">
+      <label>Dein Profil
+        <select id="me"></select>
+      </label>
+      <label>Aufgabe (optional)
+        <input id="task" placeholder="z. B. Datenbank-Modell" maxlength="100" list="taskList" autocomplete="off">
+        <datalist id="taskList"></datalist>
+      </label>
+      <label>Notiz (optional)
+        <input id="note" placeholder="Was hast du gemacht?" maxlength="300" autocomplete="off">
+      </label>
+    </div>
+  </div>
+
+  <!-- Eigene Zeit eintragen -->
+  <div class="card">
+    <h2>Meine Zeit eintragen</h2>
+    <div class="row">
+      <label>Datum <input id="mDate" type="date"></label>
+      <label>Von <input id="mFrom" type="time"></label>
+      <label>Bis <input id="mTo" type="time"></label>
+      <button id="btnAdd">Speichern</button>
+    </div>
+  </div>
+
+  <!-- Timer -->
+  <div class="card">
+    <h2>Timer (zum Mitzählen)</h2>
+    <div id="clock" class="timer">00:00:00</div>
+    <div class="row">
+      <button id="btnStart">▶ Start</button>
+      <button id="btnStop" class="stop" style="display:none">■ Stop</button>
+      <button id="btnReset" class="ghost" style="display:none">Zurücksetzen</button>
+    </div>
+    <div id="ask" class="ask" style="display:none">
+      <p id="askText"></p>
+      <div class="row">
+        <button id="btnAskYes">Ja, speichern</button>
+        <button id="btnAskNo" class="ghost">Nein, verwerfen</button>
+      </div>
+    </div>
+    <p class="hint">Der Timer speichert nichts, solange du nicht auf "Ja, speichern" klickst. Wenn du die Seite neu lädst, ist er weg.</p>
+  </div>
+
+  <!-- Auswertung -->
+  <div class="card">
+    <div class="row" style="margin-bottom:8px">
+      <h2 style="flex:2 1 200px;margin:0;align-self:center">Auswertung</h2>
+      <label>Person
+        <select id="fPerson"><option value="">Alle</option></select>
+      </label>
+      <button id="btnReload" class="ghost">Aktualisieren</button>
+    </div>
+    <div id="summary"></div>
+  </div>
+
+  <!-- Einträge -->
+  <div class="card">
+    <h2>Einträge</h2>
+    <div id="list"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ---- Supabase-Zugang (Publishable Key ist fuer den Browser gedacht) ----
+  var SUPABASE_URL = "https://aqtbfbccqhzeqnekxjzw.supabase.co";
+  var SUPABASE_KEY = "sb_publishable_eB5FzySQCXvsRTBSLfTAbQ_kg44-oOq";
+  var KEY_ME = "zeiterfassung.me.v2";
+
+  // ---- Team-Profile (Name + Rolle) ----
+  var PROFILES = [
+    { name: "Noah", role: "Dev" },
+    { name: "Lukas", role: "Dev" },
+    { name: "Ivan", role: "Dev" },
+    { name: "Phan", role: "Dev" },
+    { name: "Stiven", role: "Scrum-Master" },
+    { name: "Aleyna", role: "Product-Owner" }
+  ];
+  function label(name) {
+    for (var i = 0; i < PROFILES.length; i++) {
+      if (PROFILES[i].name === name) return name + " (" + PROFILES[i].role + ")";
+    }
+    return name;
+  }
+
+  var $ = function (id) { return document.getElementById(id); };
+  // Eigene fetch-Funktion: wandelt Headers in ein normales Objekt um.
+  // Noetig, wenn die Seite in einer Vorschau/iframe laeuft (sonst "Headers object could not be cloned").
+  function plainFetch(url, opts) {
+    opts = opts || {};
+    var h = opts.headers;
+    if (h && !Array.isArray(h) && typeof h.forEach === "function") {
+      var obj = {};
+      h.forEach(function (v, k) { obj[k] = v; });
+      opts = Object.assign({}, opts, { headers: obj });
+    }
+    return fetch(String(url), opts);
+  }
+  var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { fetch: plainFetch } });
+  var entries = [];
+
+  // ---------- Helfer ----------
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function fmtDur(ms) {
+    var s = Math.max(0, Math.round(ms / 1000));
+    return pad(Math.floor(s / 3600)) + ":" + pad(Math.floor((s % 3600) / 60)) + ":" + pad(s % 60);
+  }
+  function fmtHM(ms) {
+    var m = Math.round(ms / 60000);
+    return Math.floor(m / 60) + " h " + pad(m % 60) + " min";
+  }
+  function dayKey(ms) {
+    var d = new Date(ms);
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  }
+  function fmtDay(key) {
+    var p = key.split("-");
+    return new Date(+p[0], +p[1] - 1, +p[2]).toLocaleDateString("de-DE",
+      { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" });
+  }
+  function fmtTime(ms) {
+    var d = new Date(ms);
+    return pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  var msgTimer = null;
+  function showMsg(text, type) {
+    var m = $("msg");
+    m.textContent = text; m.className = "msg " + type;
+    clearTimeout(msgTimer);
+    if (type === "ok") msgTimer = setTimeout(function () { m.className = "msg"; }, 3000);
+  }
+  function requireMe() {
+    var me = $("me").value.trim();
+    if (!me) { showMsg("Bitte zuerst dein Profil auswählen.", "err"); $("me").focus(); return null; }
+    try { localStorage.setItem(KEY_ME, me); } catch (e) {}
+    return me;
+  }
+
+  // ---------- Datenbank ----------
+  function loadEntries() {
+    return sb.from("entries").select("*").order("started_at", { ascending: false }).limit(2000)
+      .then(function (res) {
+        if (res.error) { showMsg("Laden fehlgeschlagen: " + res.error.message, "err"); return; }
+        entries = (res.data || []).map(function (r) {
+          return { id: r.id, person: r.person, task: r.task, note: r.note,
+                   start: new Date(r.started_at).getTime(), end: new Date(r.ended_at).getTime() };
+        });
+        renderAll();
+      });
+  }
+
+  function saveEntry(person, startMs, endMs) {
+    if (!(endMs > startMs)) { showMsg("Das Ende muss nach dem Beginn liegen.", "err"); return Promise.resolve(false); }
+    return sb.from("entries").insert({
+      person: person,
+      task: $("task").value.trim(),
+      note: $("note").value.trim(),
+      started_at: new Date(startMs).toISOString(),
+      ended_at: new Date(endMs).toISOString()
+    }).then(function (res) {
+      if (res.error) { showMsg("Speichern fehlgeschlagen: " + res.error.message, "err"); return false; }
+      showMsg("Gespeichert ✓", "ok");
+      return loadEntries().then(function () { return true; });
+    });
+  }
+
+  // ---------- Eigene Zeit eintragen ----------
+  $("btnAdd").onclick = function () {
+    var me = requireMe(); if (!me) return;
+    var date = $("mDate").value, from = $("mFrom").value, to = $("mTo").value;
+    if (!date || !from || !to) { showMsg("Bitte Datum, Von und Bis ausfüllen.", "err"); return; }
+    var s = new Date(date + "T" + from).getTime();
+    var e = new Date(date + "T" + to).getTime();
+    if (isNaN(s) || isNaN(e)) { showMsg("Ungültige Zeitangabe.", "err"); return; }
+    var btn = $("btnAdd"); btn.disabled = true;
+    saveEntry(me, s, e).then(function (ok) {
+      btn.disabled = false;
+      if (ok) { $("mFrom").value = ""; $("mTo").value = ""; }
+    });
+  };
+
+  // ---------- Timer (nur im Speicher, speichert nichts von selbst) ----------
+  var timerStart = null, timerEnd = null, tick = null;
+
+  function renderTimer() {
+    var running = timerStart !== null && timerEnd === null;
+    var asking = timerStart !== null && timerEnd !== null;
+    $("btnStart").style.display = (running || asking) ? "none" : "";
+    $("btnStop").style.display = running ? "" : "none";
+    $("btnReset").style.display = running ? "" : "none";
+    $("ask").style.display = asking ? "" : "none";
+    $("clock").className = "timer" + (running ? " running" : "");
+    if (running) $("clock").textContent = fmtDur(Date.now() - timerStart);
+    else if (asking) $("clock").textContent = fmtDur(timerEnd - timerStart);
+    else $("clock").textContent = "00:00:00";
+    if (running && !tick) tick = setInterval(function () {
+      $("clock").textContent = fmtDur(Date.now() - timerStart);
+    }, 500);
+    if (!running && tick) { clearInterval(tick); tick = null; }
+  }
+  function resetTimer() { timerStart = null; timerEnd = null; renderTimer(); }
+
+  $("btnStart").onclick = function () { timerStart = Date.now(); timerEnd = null; renderTimer(); };
+  $("btnReset").onclick = function () { resetTimer(); };
+  $("btnStop").onclick = function () {
+    timerEnd = Date.now();
+    $("askText").textContent = "Diese Zeit speichern? " + fmtTime(timerStart) + " – " + fmtTime(timerEnd) +
+      " Uhr (" + fmtDur(timerEnd - timerStart) + ")";
+    renderTimer();
+  };
+  $("btnAskNo").onclick = function () { resetTimer(); };
+  $("btnAskYes").onclick = function () {
+    var me = requireMe(); if (!me) return;
+    var btn = $("btnAskYes"); btn.disabled = true;
+    saveEntry(me, timerStart, timerEnd).then(function (ok) {
+      btn.disabled = false;
+      if (ok) resetTimer();
+    });
+  };
+
+  // ---------- Anzeige ----------
+  function filtered() {
+    var p = $("fPerson").value;
+    return entries.filter(function (e) { return !p || e.person === p; });
+  }
+
+  function renderFilters() {
+    var cur = $("fPerson").value;
+    var people = Array.from(new Set(entries.map(function (e) { return e.person; }))).sort();
+    $("fPerson").innerHTML = '<option value="">Alle</option>' +
+      people.map(function (p) { return '<option value="' + esc(p) + '">' + esc(label(p)) + "</option>"; }).join("");
+    $("fPerson").value = people.indexOf(cur) >= 0 ? cur : "";
+    var tasks = Array.from(new Set(entries.map(function (e) { return e.task; }).filter(Boolean))).sort();
+    $("taskList").innerHTML = tasks.map(function (t) { return '<option value="' + esc(t) + '">'; }).join("");
+  }
+
+  function renderSummary() {
+    var list = filtered();
+    if (!list.length) { $("summary").innerHTML = '<div class="empty">Noch keine Daten.</div>'; return; }
+    var byPerson = {}, byTask = {}, total = 0;
+    list.forEach(function (e) {
+      var d = e.end - e.start; total += d;
+      byPerson[e.person] = (byPerson[e.person] || 0) + d;
+      var t = e.task || "(ohne Aufgabe)";
+      byTask[t] = (byTask[t] || 0) + d;
+    });
+    function table(title, obj, fmt) {
+      var rows = Object.keys(obj).sort(function (a, b) { return obj[b] - obj[a]; }).map(function (k) {
+        return "<tr><td>" + esc(fmt ? fmt(k) : k) + '</td><td class="num">' + fmtHM(obj[k]) + "</td></tr>";
+      }).join("");
+      return "<table><thead><tr><th>" + title + '</th><th class="num">Zeit</th></tr></thead><tbody>' + rows + "</tbody></table>";
+    }
+    $("summary").innerHTML =
+      '<p style="margin:0 0 10px"><strong>Gesamt: ' + fmtHM(total) + "</strong></p>" +
+      table("Person", byPerson, label) +'<div style="height:12px"></div>' + table("Aufgabe", byTask);
+  }
+
+  function renderList() {
+    var list = filtered();
+    if (!list.length) { $("list").innerHTML = '<div class="empty">Noch keine Einträge.</div>'; return; }
+    var groups = {}, order = [];
+    list.forEach(function (e) {
+      var k = dayKey(e.start);
+      if (!groups[k]) { groups[k] = []; order.push(k); }
+      groups[k].push(e);
+    });
+    $("list").innerHTML = order.map(function (k) {
+      var sum = groups[k].reduce(function (a, e) { return a + (e.end - e.start); }, 0);
+      var rows = groups[k].map(function (e) {
+        return "<tr>" +
+          "<td>" + fmtTime(e.start) + "–" + fmtTime(e.end) + "</td>" +
+          "<td>" + esc(label(e.person)) + "</td>" +
+          "<td>" + (e.task ? '<span class="tag">' + esc(e.task) + "</span> " : "") + esc(e.note) + "</td>" +
+          '<td class="num">' + fmtDur(e.end - e.start) + "</td>" +
+          '<td class="num"><button class="danger" data-del="' + esc(e.id) + '" title="Löschen">✕</button></td>' +
+          "</tr>";
+      }).join("");
+      return '<div class="day">' + fmtDay(k) + "<span>" + fmtHM(sum) + "</span></div>" +
+        "<table><tbody>" + rows + "</tbody></table>";
+    }).join("");
+  }
+
+  function renderAll() { renderFilters(); renderSummary(); renderList(); }
+
+  $("list").onclick = function (ev) {
+    var id = ev.target && ev.target.getAttribute && ev.target.getAttribute("data-del");
+    if (!id) return;
+    if (!confirm("Eintrag wirklich löschen?")) return;
+    sb.from("entries").delete().eq("id", id).then(function (res) {
+      if (res.error) { showMsg("Löschen fehlgeschlagen: " + res.error.message, "err"); return; }
+      showMsg("Gelöscht ✓", "ok");
+      loadEntries();
+    });
+  };
+  $("fPerson").onchange = function () { renderSummary(); renderList(); };
+  $("btnReload").onclick = function () { loadEntries(); };
+
+  // ---------- Start ----------
+  $("me").innerHTML = '<option value="">Profil wählen …</option>' +
+    PROFILES.map(function (p) {
+      return '<option value="' + esc(p.name) + '">' + esc(p.name + " (" + p.role + ")") + "</option>";
+    }).join("");
+  try { $("me").value = localStorage.getItem(KEY_ME) || ""; } catch (e) {}
+  $("me").onchange = function () {
+    try { localStorage.setItem(KEY_ME, $("me").value); } catch (e) {}
+  };
+  $("mDate").value = dayKey(Date.now());
+  renderTimer();
+  loadEntries();
+  setInterval(loadEntries, 60000);
+})();
+</script>
+</body>
+</html>
